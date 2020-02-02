@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include <fcntl.h>
 #include <signal.h>
 #include <dirent.h>
+#include <pwd.h>
 
 #include "./lynx/system.h"
 #include "./lynx/lynxdef.h"
@@ -76,16 +77,72 @@ static void ReadJoysticks()
         isRunning = false;
 }
 
+static const char* FileNameFromPath(const char* fullpath)
+{
+    // Find last slash
+    const char* ptr = strrchr(fullpath,'/');
+    if (!ptr)
+    {
+        ptr = fullpath;
+    }
+    else
+    {
+        ++ptr;
+    } 
+
+    return ptr;   
+}
+
+static char* PathCombine(const char* path, const char* filename)
+{
+    int len = strlen(path);
+    int total_len = len + strlen(filename);
+
+    char* result = NULL;
+
+    if (path[len-1] != '/')
+    {
+        ++total_len;
+        result = (char*)calloc(total_len + 1, 1);
+        strcpy(result, path);
+        strcat(result, "/");
+        strcat(result, filename);
+    }
+    else
+    {
+        result = (char*)calloc(total_len + 1, 1);
+        strcpy(result, path);
+        strcat(result, filename);
+    }
+    
+    return result;
+}
+
+static int LoadState(CSystem* lynx, const char* saveName)
+{
+    if (access(saveName, F_OK ) == 0 )
+    {
+        bool result = lynx->ContextLoad(saveName);
+        return result ? 0 : -1;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+static void SaveState(CSystem* lynx, const char* saveName)
+{
+   lynx->ContextSave(saveName);
+}
 
 static UBYTE* lynx_display_callback(ULONG objref)
 {
     if(gAudioBufferPointer > 0)
     {
         //printf("%s: gAudioBufferPointer=%lu\n", __func__, gAudioBufferPointer);
-        // 1472, 1476
 #if 1
         int f = gAudioBufferPointer / 4; // /1 - 8 bit mono, /2 8 bit stereo, /4 16 bit stereo
-        //odroid_audio_submit((short*)gAudioBuffer, f);
         ProcessAudio(gAudioBuffer, f);
         gAudioBufferPointer = 0;
 #endif
@@ -117,16 +174,31 @@ int main (int argc, char **argv)
     InitSound();
     InitJoysticks();
 
-    unsigned long rot = MIKIE_NO_ROTATE;
-
+    
     const char* romfile = argv[1];
     const char* biosfilename = ""; //"lynxboot.img";
 
     CSystem* lynx = new CSystem(romfile, biosfilename, true);
-    lynx->DisplaySetAttributes(rot, MIKIE_PIXEL_FORMAT_16BPP_565, HANDY_SCREEN_WIDTH * 2, lynx_display_callback, (ULONG)0);
+    lynx->DisplaySetAttributes(MIKIE_NO_ROTATE, MIKIE_PIXEL_FORMAT_16BPP_565, HANDY_SCREEN_WIDTH * 2, lynx_display_callback, (ULONG)0);
 
     gAudioEnabled = true;
  
+
+    const char* fileName = FileNameFromPath(romfile);
+    
+    char* saveName = (char*)malloc(strlen(fileName) + 4 + 1);
+    strcpy(saveName, fileName);
+    strcat(saveName, ".sav");
+
+
+    struct passwd *pw = getpwuid(getuid());
+    const char *homedir = pw->pw_dir;
+
+    char* savePath = PathCombine(homedir, saveName);
+    printf("savePath='%s'\n", savePath);
+    //LoadState(lynx, savePath);
+
+
     int totalFrames = 0;
     double totalElapsed = 0.0;
 
@@ -219,6 +291,9 @@ int main (int argc, char **argv)
         Stopwatch_Reset();
 #endif
     }
+
+    //SaveState(lynx, savePath);
+    free(savePath);
 
     return 0;
 }
