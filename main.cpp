@@ -109,8 +109,8 @@ int main (int argc, char **argv)
     display = go2_display_create();
     presenter = go2_presenter_create(display, DRM_FORMAT_RGB565, 0xff080808);
 
-    go2_surface_t* fbsurface = go2_surface_create(display, HANDY_SCREEN_WIDTH, HANDY_SCREEN_HEIGHT, DRM_FORMAT_RGB565);
-    framebuffer = (uint16_t*)go2_surface_map(fbsurface);
+    go2_surface_t* fbsurface = go2_surface_create(display, HANDY_SCREEN_WIDTH * 3, HANDY_SCREEN_HEIGHT * 3, DRM_FORMAT_RGB565);
+    framebuffer = (uint16_t*)malloc(HANDY_SCREEN_WIDTH * HANDY_SCREEN_HEIGHT * sizeof(uint16_t)); //(uint16_t*)go2_surface_map(fbsurface);
     if (!framebuffer) abort();
 
 
@@ -166,9 +166,39 @@ int main (int argc, char **argv)
         newFrame = false;
 
 
+        uint16_t* src = framebuffer;
+        const int srcStride = HANDY_SCREEN_WIDTH;
+
+        uint16_t* dst = (uint16_t*)go2_surface_map(fbsurface);
+        const int dstStride = HANDY_SCREEN_WIDTH * 3;
+
+        for (int y = 0; y < HANDY_SCREEN_HEIGHT; ++y)
+        {
+            for (int x = 0; x < HANDY_SCREEN_WIDTH; ++x)
+            {
+                uint16_t pixel = src[x];
+                dst[x * 3] = pixel;
+                dst[x * 3 + 1] = pixel;
+#if 1
+                const uint8_t R = (pixel >> 11) >> 1;
+                const uint8_t G = (pixel >> 5 & 0x3f) >> 1;
+                const uint8_t B = (pixel & 0x1f) >> 1;
+                dst[x * 3 + 2] = (R << 11) | (G << 5) | B;
+#else
+                dst[x * 3 + 2] = pixel;
+#endif
+            }
+
+            src += srcStride;
+
+            memcpy(dst + dstStride, dst, dstStride * sizeof(uint16_t));
+            memcpy(dst + dstStride * 2, dst, dstStride * sizeof(uint16_t));
+            dst += dstStride * 3;
+        }
+
         go2_presenter_post( presenter,
                             fbsurface,
-                            0, 0, HANDY_SCREEN_WIDTH, HANDY_SCREEN_HEIGHT,
+                            0, 0, HANDY_SCREEN_WIDTH * 3, HANDY_SCREEN_HEIGHT * 3,
                             (320 / 2) - (HANDY_SCREEN_HEIGHT * 3 / 2), 0, HANDY_SCREEN_HEIGHT * 3, HANDY_SCREEN_WIDTH * 3,
                             GO2_ROTATION_DEGREES_270);
         ++totalFrames;
